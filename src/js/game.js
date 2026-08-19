@@ -142,9 +142,16 @@ function clearFrightened( game ) {
   game.ghosts.forEach( ( g ) => { g.frightened = false; } );
 }
 
+function ghostSpeed( g ) {
+  if ( g.state === 'eyes' || g.state === 'entering' ) return EYES_SPEED;
+  return g.frightened ? FRIGHT_SPEED : g.speed;
+}
+
 // Objetivo por kind. Solo se usa para comparar distancias: puede quedar
 // fuera del tablero (pinky/inky) y no hace falta validarlo.
 function ghostTarget( game, g ) {
+  if ( g.state === 'eyes' ) return { x: 13, y: 11 };
+
   const p = game.pacman;
   const px = Math.round( p.x );
   const py = Math.round( p.y );
@@ -206,7 +213,7 @@ function decideGhost( game, g ) {
 // Salida de la casa por waypoints: (13,14) -> (13,11), atravesando la
 // puerta a velocidad normal y sin decidir direccion.
 function moveGhostExiting( g ) {
-  const speed = g.frightened ? FRIGHT_SPEED : g.speed;
+  const speed = ghostSpeed( g );
   if ( Math.abs( g.x - 13 ) > 1e-3 ) {
     // Waypoint 1: centrarse en la columna de la puerta.
     g.dir = g.x < 13 ? 'right' : 'left';
@@ -224,6 +231,40 @@ function moveGhostExiting( g ) {
   }
 }
 
+function moveGhostEntering( g ) {
+  const speed = ghostSpeed( g );
+  g.x = 13;
+  g.dir = 'down';
+  g.y += Math.min( speed, 14 - g.y );
+  if ( g.y >= 14 - 1e-3 ) {
+    g.y = 14;
+    g.state = 'exiting';
+    g.frightened = false;
+  }
+}
+
+function moveGhostEyes( game, g ) {
+  const grid = game.grid;
+  const width = grid[ 0 ].length;
+
+  if ( aligned( g.x ) && aligned( g.y ) ) {
+    g.x = Math.round( g.x );
+    g.y = Math.round( g.y );
+    if ( g.x === 13 && g.y === 11 ) {
+      g.state = 'entering';
+      return;
+    }
+    decideGhost( game, g );
+    if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) return;
+  }
+
+  const d = DIRS[ g.dir ];
+  const speed = ghostSpeed( g );
+  g.x += d.x * speed;
+  g.y += d.y * speed;
+  wrapTunnel( g, width );
+}
+
 // Mueve un fantasma exiting/active. Los waiting estan quietos: update
 // gestiona su temporizador de salida.
 function moveGhost( game, g ) {
@@ -231,6 +272,16 @@ function moveGhost( game, g ) {
 
   if ( g.state === 'exiting' ) {
     moveGhostExiting( g );
+    return;
+  }
+
+  if ( g.state === 'entering' ) {
+    moveGhostEntering( g );
+    return;
+  }
+
+  if ( g.state === 'eyes' ) {
+    moveGhostEyes( game, g );
     return;
   }
 
@@ -245,7 +296,7 @@ function moveGhost( game, g ) {
   }
 
   const d = DIRS[ g.dir ];
-  const speed = g.frightened ? FRIGHT_SPEED : g.speed;
+  const speed = ghostSpeed( g );
   g.x += d.x * speed;
   g.y += d.y * speed;
   wrapTunnel( g, width );
@@ -286,10 +337,18 @@ function update( game ) {
   } );
 
   for ( const g of game.ghosts ) {
+    if ( g.state === 'eyes' || g.state === 'entering' ) continue;
     if ( collides( game.pacman, g ) ) {
+      if ( g.frightened ) {
+        game.score += 200 << game.ghostCombo;
+        game.ghostCombo++;
+        g.frightened = false;
+        g.state = 'eyes';
+        continue;
+      }
       game.lives--;
       if ( game.lives <= 0 ) {
-        clearFrightened( game );
+        resetPositions( game );
         game.state = 'lost';
         return;
       }
