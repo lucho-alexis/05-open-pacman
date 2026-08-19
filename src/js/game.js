@@ -42,6 +42,8 @@ function createGame() {
       dir: 'up',
       speed: GHOST_SPEED,
       kind: g.kind,
+      state: g.exitDelay > 0 ? 'waiting' : 'active',
+      waitTimer: g.exitDelay,
     } ) ),
   };
 }
@@ -51,14 +53,16 @@ function aligned( v ) {
 }
 
 // Una celda es muro para el actor dado?
-//   pacman: bloqueado por pared (1) y puerta (3)
-//   ghost:  bloqueado solo por pared (1)
+//   pared (1): bloquea a todos.
+//   puerta (3): bloquea a pacman y a fantasmas activos; los que salen de
+//   la casa (exiting) no pasan por aqui (usan waypoints), asi la puerta
+//   solo se cruza al salir.
 function isWall( grid, x, y, actor ) {
   if ( y < 0 || y >= grid.length ) return true;
   if ( x < 0 || x >= grid[ 0 ].length ) return true;
   const v = grid[ y ][ x ];
   if ( v === 1 ) return true;
-  if ( v === 3 && actor === 'pacman' ) return true;
+  if ( v === 3 ) return true;
   return false;
 }
 
@@ -141,7 +145,36 @@ function decideGhost( game, g ) {
   }
 }
 
+// Salida de la casa por waypoints: (13,14) -> (13,11), atravesando la
+// puerta a velocidad normal y sin decidir direccion.
+function moveGhostExiting( g ) {
+  if ( Math.abs( g.x - 13 ) > 1e-3 ) {
+    // Waypoint 1: centrarse en la columna de la puerta.
+    g.dir = g.x < 13 ? 'right' : 'left';
+    const dx = 13 - g.x;
+    g.x += Math.abs( dx ) <= g.speed ? dx : Math.sign( dx ) * g.speed;
+    return;
+  }
+  g.x = 13;
+  // Waypoint 2: subir atravesando la puerta hasta fuera de la casa.
+  g.dir = 'up';
+  g.y -= Math.min( g.speed, g.y - 11 );
+  if ( g.y <= 11 + 1e-3 ) {
+    g.y = 11;
+    g.state = 'active';
+  }
+}
+
+// Mueve un fantasma exiting/active. Los waiting estan quietos: update
+// gestiona su temporizador de salida.
 function moveGhost( game, g ) {
+  if ( g.state === 'waiting' ) return;
+
+  if ( g.state === 'exiting' ) {
+    moveGhostExiting( g );
+    return;
+  }
+
   const grid = game.grid;
   const width = grid[ 0 ].length;
 
@@ -165,9 +198,12 @@ function resetPositions( game ) {
   p.dir = 'left';
   p.nextDir = null;
   game.ghosts.forEach( ( g, i ) => {
-    g.x = GHOST_STARTS[ i ].x;
-    g.y = GHOST_STARTS[ i ].y;
+    const start = GHOST_STARTS[ i ];
+    g.x = start.x;
+    g.y = start.y;
     g.dir = 'up';
+    g.state = start.exitDelay > 0 ? 'waiting' : 'active';
+    g.waitTimer = start.exitDelay;
   } );
 }
 
@@ -177,7 +213,16 @@ function collides( a, b ) {
 
 function update( game ) {
   movePacman( game );
-  game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
+
+  game.ghosts.forEach( ( g ) => {
+    if ( g.state === 'waiting' ) {
+      // Salida escalonada: al agotar el temporizador empieza a salir.
+      g.waitTimer--;
+      if ( g.waitTimer <= 0 ) g.state = 'exiting';
+      return;
+    }
+    moveGhost( game, g );
+  } );
 
   for ( const g of game.ghosts ) {
     if ( collides( game.pacman, g ) ) {
