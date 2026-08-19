@@ -1,6 +1,6 @@
 # SPEC 02 — Bucle a paso fijo: velocidad estable a 60 ticks/s
 
-> **Status:** Borrador
+> **Status:** Aprobado
 > **Depends on:** ninguna
 > **Date:** 2026-08-19
 > **Objective:** Normalizar el bucle de juego a un paso fijo de 60 ticks/s para que la velocidad de Pac-Man, los fantasmas y los retardos de salida dejen de depender de la frecuencia del monitor.

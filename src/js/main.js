@@ -39,10 +39,24 @@ function startGame() {
 
 if ( actionBtn ) actionBtn.addEventListener( 'click', startGame );
 
+// Bucle a paso fijo: 60 ticks/s con acumulador de tiempo real.
+const TICK_MS = 1000 / 60;
+let last = performance.now();
+let acc = 0;
+
 function loop() {
-  frame++;
-  if ( game.state === 'playing' ) {
-    update( game );
+  const now = performance.now();
+  let dt = now - last;
+  last = now;
+  if ( dt > 100 ) dt = 100; // tope al volver de una pestaña en segundo plano
+  acc += dt;
+  const prevState = game.state;
+  while ( acc >= TICK_MS ) {
+    frame++;
+    if ( game.state === 'playing' ) update( game );
+    acc -= TICK_MS;
+  }
+  if ( prevState === 'playing' ) {
     if ( game.state === 'won' ) showOverlay( 'GANASTE', 'win', 'Reiniciar' );
     else if ( game.state === 'lost' ) showOverlay( 'PERDISTE', 'lose', 'Reiniciar' );
   }
