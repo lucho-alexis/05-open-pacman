@@ -35,6 +35,7 @@ function createGame() {
     dotsRemaining: dots,
     frightTimer: 0,
     ghostCombo: 0,
+    popups: [],
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -304,6 +305,7 @@ function moveGhost( game, g ) {
 
 function resetPositions( game ) {
   clearFrightened( game );
+  game.popups = [];
   const p = game.pacman;
   p.x = PACMAN_START.x;
   p.y = PACMAN_START.y;
@@ -340,8 +342,10 @@ function update( game ) {
     if ( g.state === 'eyes' || g.state === 'entering' ) continue;
     if ( collides( game.pacman, g ) ) {
       if ( g.frightened ) {
-        game.score += 200 << game.ghostCombo;
+        const value = 200 << game.ghostCombo;
+        game.score += value;
         game.ghostCombo++;
+        game.popups.push( { x: g.x, y: g.y, value, timer: 60 } );
         g.frightened = false;
         g.state = 'eyes';
         continue;
@@ -361,6 +365,11 @@ function update( game ) {
     game.frightTimer--;
     if ( game.frightTimer <= 0 ) clearFrightened( game );
   }
+
+  game.popups = game.popups.filter( ( popup ) => {
+    popup.timer--;
+    return popup.timer > 0;
+  } );
 
   if ( game.dotsRemaining <= 0 ) game.state = 'won';
 }

@@ -174,6 +174,17 @@ function drawHUD( ctx, game, W ) {
   ctx.fillText( 'VIDAS ' + game.lives, W * TILE - 8, 4 );
 }
 
+function drawPopups( ctx, popups ) {
+  ctx.fillStyle = '#00ffff';
+  ctx.font = 'bold 14px "Courier New", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  popups.forEach( ( popup ) => {
+    const { cx, cy } = cellCenter( popup.x, popup.y );
+    ctx.fillText( '' + popup.value, cx, cy );
+  } );
+}
+
 // Orden = GHOST_STARTS: blinky rojo, pinky rosa, inky cian, clyde naranja.
 const GHOST_COLORS = [ '#ff0000', '#ffb8ff', '#00ffff', '#ffb852' ];
 
@@ -196,6 +207,7 @@ function draw( ctx, game, frame ) {
     frame,
     game.frightTimer
   ) );
+  drawPopups( ctx, game.popups );
   drawHUD( ctx, game, W );
 }
 
