@@ -12,6 +12,11 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // 1/10 celda/frame
+const PELLET_SCORE = 50;
+const FRIGHT_FRAMES = 360;   // ~6 s
+const FRIGHT_FLASH = 120;    // ultimos ~2 s
+const FRIGHT_SPEED = 0.05;   // mitad de GHOST_SPEED
+const EYES_SPEED = 0.2;      // doble de GHOST_SPEED
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
 // dots sin destruir el original, y reiniciar.
@@ -28,6 +33,8 @@ function createGame() {
     score: 0,
     lives: 3,
     dotsRemaining: dots,
+    frightTimer: 0,
+    ghostCombo: 0,
     grid,
     pacman: {
       x: PACMAN_START.x,
@@ -44,6 +51,7 @@ function createGame() {
       kind: g.kind,
       state: g.exitDelay > 0 ? 'waiting' : 'active',
       waitTimer: g.exitDelay,
+      frightened: false,
     } ) ),
   };
 }
@@ -102,8 +110,9 @@ function movePacman( game ) {
     const cell = grid[ p.y ][ p.x ];
     if ( cell === 2 || cell === 4 ) {
       grid[ p.y ][ p.x ] = 0;
-      game.score += cell === 4 ? 50 : 10;
+      game.score += cell === 4 ? PELLET_SCORE : 10;
       game.dotsRemaining--;
+      if ( cell === 4 ) activateFrightened( game );
     }
     // Si no puede seguir, se detiene en la celda.
     if ( !canMove( grid, p.x, p.y, p.dir, 'pacman' ) ) return;
@@ -116,6 +125,22 @@ function movePacman( game ) {
 }
 
 const CLYDE_CORNER = { x: 1, y: 29 }; // esquina inferior izquierda (retirada de clyde)
+
+function activateFrightened( game ) {
+  game.frightTimer = FRIGHT_FRAMES;
+  game.ghostCombo = 0;
+  game.ghosts.forEach( ( g ) => {
+    if ( g.state === 'eyes' || g.state === 'entering' ) return;
+    g.frightened = true;
+    if ( g.state === 'active' ) g.dir = OPPOSITE[ g.dir ];
+  } );
+}
+
+function clearFrightened( game ) {
+  game.frightTimer = 0;
+  game.ghostCombo = 0;
+  game.ghosts.forEach( ( g ) => { g.frightened = false; } );
+}
 
 // Objetivo por kind. Solo se usa para comparar distancias: puede quedar
 // fuera del tablero (pinky/inky) y no hace falta validarlo.
@@ -147,13 +172,19 @@ function ghostTarget( game, g ) {
 
 function decideGhost( game, g ) {
   const grid = game.grid;
-  const target = ghostTarget( game, g );
 
   const options = Object.keys( DIRS ).filter(
     ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, 'ghost' )
   );
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
+
+  if ( g.frightened ) {
+    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    return;
+  }
+
+  const target = ghostTarget( game, g );
 
   // Greedy sin reversa: la direccion que minimiza Manhattan al objetivo.
   // El orden de DIRS (left, right, up, down) queda como desempate.
@@ -175,17 +206,18 @@ function decideGhost( game, g ) {
 // Salida de la casa por waypoints: (13,14) -> (13,11), atravesando la
 // puerta a velocidad normal y sin decidir direccion.
 function moveGhostExiting( g ) {
+  const speed = g.frightened ? FRIGHT_SPEED : g.speed;
   if ( Math.abs( g.x - 13 ) > 1e-3 ) {
     // Waypoint 1: centrarse en la columna de la puerta.
     g.dir = g.x < 13 ? 'right' : 'left';
     const dx = 13 - g.x;
-    g.x += Math.abs( dx ) <= g.speed ? dx : Math.sign( dx ) * g.speed;
+    g.x += Math.abs( dx ) <= speed ? dx : Math.sign( dx ) * speed;
     return;
   }
   g.x = 13;
   // Waypoint 2: subir atravesando la puerta hasta fuera de la casa.
   g.dir = 'up';
-  g.y -= Math.min( g.speed, g.y - 11 );
+  g.y -= Math.min( speed, g.y - 11 );
   if ( g.y <= 11 + 1e-3 ) {
     g.y = 11;
     g.state = 'active';
@@ -213,12 +245,14 @@ function moveGhost( game, g ) {
   }
 
   const d = DIRS[ g.dir ];
-  g.x += d.x * g.speed;
-  g.y += d.y * g.speed;
+  const speed = g.frightened ? FRIGHT_SPEED : g.speed;
+  g.x += d.x * speed;
+  g.y += d.y * speed;
   wrapTunnel( g, width );
 }
 
 function resetPositions( game ) {
+  clearFrightened( game );
   const p = game.pacman;
   p.x = PACMAN_START.x;
   p.y = PACMAN_START.y;
@@ -255,12 +289,18 @@ function update( game ) {
     if ( collides( game.pacman, g ) ) {
       game.lives--;
       if ( game.lives <= 0 ) {
+        clearFrightened( game );
         game.state = 'lost';
         return;
       }
       resetPositions( game );
       break;
     }
+  }
+
+  if ( game.frightTimer > 0 ) {
+    game.frightTimer--;
+    if ( game.frightTimer <= 0 ) clearFrightened( game );
   }
 
   if ( game.dotsRemaining <= 0 ) game.state = 'won';
